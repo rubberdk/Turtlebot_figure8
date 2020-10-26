@@ -1,0 +1,99 @@
+#!/usr/bin/env python
+import rospy, tf
+from math import cos, pi, sin, sqrt, atan2, atan
+from scipy.misc import derivative
+from geometry_msgs.msg import Twist, Point, Quaternion, Pose, PoseStamped
+from nav_msgs.msg import Path
+from std_srvs.srv import Empty, EmptyResponse
+
+"""
+    PUBLISHERS:
+        turtle1/cmd_vel
+        Path
+        Point
+
+"""
+def eight():
+    """
+        Publishes turtle1/cmd_vel #for turtlesim 
+        Publishes /cmd_vel # for turtlebot
+    """
+    sim_pub = rospy.Publisher('turtle1/cmd_vel',Twist, queue_size=10)   
+    pub = rospy.Publisher('/cmd_vel',Twist, queue_size=10)  # publishes cmd/vel for turtlebot
+    path_pub = rospy.Publisher("path", Path, queue_size=10)
+    point_pub = rospy.Publisher("point", Point, queue_size=10)
+    pause = rospy.ServiceProxy("/gazebo/pause_physics", Empty)
+    unpause = rospy.ServiceProxy("/gazebo/unpause_physics", Empty)
+  
+
+    T = rospy.get_param("T")
+    H = rospy.get_param("H")
+    W = rospy.get_param("W")
+    R = rospy.get_param("pub_freq")
+    rate = rospy.Rate(R)    
+    path = Path()
+    path.poses = []
+    t = 0.0                 
+    theta_0 = 0
+    trajectory = Twist()
+   
+
+    while not rospy.is_shutdown():
+
+        x = W/2* sin(2*pi*t/T)
+        y = H/2* sin(4*pi*t/T)
+        xdot = pi*W*cos(2*pi*t/T)/T
+        ydot = 2*pi*H*cos(4*pi*t/T)/T
+        v = sqrt(xdot**2+ydot**2)
+       
+        # calculate angular velocity
+        xddot = -2.0*pi**2*W*sin(2*pi*t/T)/(T**2)
+        yddot = -8.0*pi**2*H*sin(4*pi*t/T)/(T**2)
+     
+        w = (yddot*xdot-xddot*ydot)/(xdot**2+ydot**2)
+
+       
+        # turtle velocity control
+        trajectory.linear.x = v
+        trajectory.angular.z = w
+        # turtlesim display
+        sim_pub.publish (trajectory)
+        # turtlebot control traejctory = tj
+        pub.publish(trajectory)
+        
+        point_pub.publish(Point(x, y, 1))
+        path.header.stamp = rospy.Time.now()
+        br = tf.TransformBroadcaster()
+        path.header.frame_id = "odom"
+       
+        br.sendTransform((0.0, 0.0, 0.0),
+                           (0.0, 0.0, theta_0, 1.0),
+                            rospy.Time.now(),
+                            "odom",
+                            "world")             
+        path.poses.append(PoseStamped(header = path.header, 
+                                      pose=Pose(
+                                          position = Point(x,y,1), 
+                                          orientation=Quaternion(0,0,0,1))))                    
+    
+        path_pub.publish(path)
+        
+
+        if t == T:
+            t = 0.0
+        else:
+            t = t+(1/R)
+
+        rate.sleep()
+
+if __name__ == '__main__':
+    
+    rospy.init_node('trajectory')
+    try:
+
+        eight()
+    except rospy.ROSInterruptException:
+        pass
+
+
+     
